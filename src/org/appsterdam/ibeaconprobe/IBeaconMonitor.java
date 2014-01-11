@@ -3,21 +3,25 @@ package org.appsterdam.ibeaconprobe;
 import java.util.Collection;
 
 import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.os.RemoteException;
 import android.util.Log;
 
 import com.radiusnetworks.ibeacon.IBeacon;
+import com.radiusnetworks.ibeacon.IBeaconConsumer;
 import com.radiusnetworks.ibeacon.IBeaconManager;
 import com.radiusnetworks.ibeacon.MonitorNotifier;
 import com.radiusnetworks.ibeacon.RangeNotifier;
 import com.radiusnetworks.ibeacon.Region;
 
-public class IBeaconMonitor implements MonitorNotifier, RangeNotifier {
+public class IBeaconMonitor implements MonitorNotifier, RangeNotifier, IBeaconConsumer {
 	static final private String TAG = "ibmonitor";
 
 
 	static public interface IBeaconsListeners extends MonitorNotifier, RangeNotifier {
-		
+		void onIBeaconServiceConnect ();
 	}
 
 	final private IBeaconManager ibeaconManager;
@@ -26,10 +30,10 @@ public class IBeaconMonitor implements MonitorNotifier, RangeNotifier {
 	private Region rangingRegion = null;
 	private IBeaconsListeners listener;
 
-	public IBeaconMonitor (Activity activity, IBeaconManager ibeaconManager) {
+	public IBeaconMonitor (Activity activity) {
 		this.activity = activity;
-		this.ibeaconManager = ibeaconManager;
-		
+		this.ibeaconManager = IBeaconManager.getInstanceForApplication(activity);
+		this.ibeaconManager.bind (this);
 	}
 
 	public void setListener (IBeaconsListeners listener) {
@@ -38,7 +42,7 @@ public class IBeaconMonitor implements MonitorNotifier, RangeNotifier {
 
 	public void startMonotoring (String proximityUuid) {
 		if (this.monitorRegion != null) {
-			Log.i (TAG, "iBeacon motinor already started");
+			Log.i (TAG, "iBeacon monitor already started");
 			return;
 		}
 		this.monitorRegion = new Region ("uniqueRegion", proximityUuid, null, null);
@@ -84,7 +88,11 @@ public class IBeaconMonitor implements MonitorNotifier, RangeNotifier {
 			Log.e (TAG, "Unable to stop ranging", e);
 		}
 	}
-	
+
+	public void unbind () {
+		this.ibeaconManager.unBind (this);
+	}
+
 	@Override
 	public void didExitRegion (final Region region) {
 		Log.i (TAG, "A iBeacon left!");
@@ -139,6 +147,31 @@ public class IBeaconMonitor implements MonitorNotifier, RangeNotifier {
 					IBeaconMonitor.this.listener.didRangeBeaconsInRegion (iBeacons, region);
 				}});
 		}
+	}
+
+	@Override
+	public Context getApplicationContext () {
+		return this.activity.getApplicationContext ();
+	}
+
+	@Override
+	public boolean bindService (Intent service, ServiceConnection conn, int flags) {
+		return this.activity.bindService (service, conn, flags);
+	}
+
+	@Override
+	public void unbindService (ServiceConnection conn) {
+		this.activity.unbindService (conn);
+	}
+
+	@Override
+	public void onIBeaconServiceConnect () {
+		Log.i (TAG, "Connecting to the IBeacon service.");
+		this.ibeaconManager.setMonitorNotifier (this);
+		this.ibeaconManager.setRangeNotifier (this);
+
+//		this.monitor.startMonotoring (this.proximityUuid);
+//		this.monitor.startRanging (this.proximityUuid);
 	}
 
 }

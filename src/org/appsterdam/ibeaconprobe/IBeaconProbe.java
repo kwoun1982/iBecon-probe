@@ -13,14 +13,11 @@ import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.radiusnetworks.ibeacon.IBeacon;
-import com.radiusnetworks.ibeacon.IBeaconConsumer;
-import com.radiusnetworks.ibeacon.IBeaconManager;
 import com.radiusnetworks.ibeacon.Region;
 
-public class IBeaconProbe extends Activity implements IBeaconConsumer {
+public class IBeaconProbe extends Activity {
 	static private final String TAG = "ibprobe";
 	
-	private IBeaconManager iBeaconManager = IBeaconManager.getInstanceForApplication(this);
 	private IBeaconMonitor monitor;
 	
 	private TextView textView;
@@ -28,7 +25,7 @@ public class IBeaconProbe extends Activity implements IBeaconConsumer {
 
 	//private String proximityUuid = "B9407F30-F5F8-466E-AFF9-25556B57FE6D".toLowerCase (); //
 	private String proximityUuid = "74278bda-b644-4520-8f0c-720eaf059935".toLowerCase (); // glimworm iBeacons
-	private int[] minors = {4, 6};
+	private int[] minors = {4, 6}; // we filter on this minors iBeacon ids.
 	private Map<String, Double> iBeacons = new HashMap<String, Double> ();
 
 	@Override
@@ -38,8 +35,7 @@ public class IBeaconProbe extends Activity implements IBeaconConsumer {
 		this.textView = (TextView) findViewById (android.R.id.text1);
 		this.seekBar = (SeekBar) findViewById (android.R.id.progress);
 
-		this.iBeaconManager.bind (this);
-		this.monitor = new IBeaconMonitor (this, IBeaconManager.getInstanceForApplication(this));
+		this.monitor = new IBeaconMonitor (this);
 
 		this.textView.setText ("Starting the iBeaconProbe!");
 
@@ -66,10 +62,28 @@ public class IBeaconProbe extends Activity implements IBeaconConsumer {
 				Log.i (TAG, "Beacons in range: " + iBeacons.size ());
 				for (IBeacon ib : iBeacons) {
 					if (valueInArray (ib.getMinor (), IBeaconProbe.this.minors)) {
-						IBeaconProbe.this.iBeacons.put (ibToString (ib, region), Double.valueOf (ib.getAccuracy ()));
+						double distance = 0.0;
+						switch (ib.getProximity ()) {
+							case IBeacon.PROXIMITY_IMMEDIATE: // d < 0.5 m
+							case IBeacon.PROXIMITY_NEAR: // 0.5 m < d < 4 m
+							case IBeacon.PROXIMITY_FAR: // 4 m < d
+								distance = ib.getAccuracy ();
+								break;
+							case IBeacon.PROXIMITY_UNKNOWN:
+								distance = Double.POSITIVE_INFINITY;
+								break;
+						}
+						IBeaconProbe.this.iBeacons.put (ibToString (ib), Double.valueOf (distance));
 					}
 				}
 				IBeaconProbe.this.updateView ();
+			}
+
+			@Override
+			public void onIBeaconServiceConnect () {
+				Log.i (TAG, "Connecting to the IBeacon service.");
+//				IBeaconProbe.this.monitor.startMonotoring (IBeaconProbe.this.proximityUuid);
+				IBeaconProbe.this.monitor.startRanging (IBeaconProbe.this.proximityUuid);
 			}
 		});
 	}
@@ -84,17 +98,7 @@ public class IBeaconProbe extends Activity implements IBeaconConsumer {
 	@Override
 	protected void onDestroy () {
 		super.onDestroy ();
-		this.iBeaconManager.unBind (this);
-	}
-
-	@Override
-	public void onIBeaconServiceConnect () {
-		Log.i (TAG, "Connecting to the IBeacon service.");
-		this.iBeaconManager.setMonitorNotifier (this.monitor);
-		this.iBeaconManager.setRangeNotifier (this.monitor);
-
-		this.monitor.startMonotoring (this.proximityUuid);
-		this.monitor.startRanging (this.proximityUuid);
+		this.monitor.unbind ();
 	}
 
 	private void updateView () {
@@ -119,7 +123,7 @@ public class IBeaconProbe extends Activity implements IBeaconConsumer {
 		this.seekBar.setProgress ((int) (distance / totalDistance * 100.0));
 	}
 
-	static private String ibToString (IBeacon ib, Region region) {
+	static private String ibToString (IBeacon ib) {
 		String string = String.format ("%s:%d:%d",
 				ib.getProximityUuid (),
 				ib.getMajor (),
